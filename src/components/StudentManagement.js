@@ -85,6 +85,68 @@ const StudentManagement = () => {
     }
   };
 
+  const exportStudents = (format) => {
+    const exportData = filteredStudents.map(student => ({
+      'Full Name': student.full_name,
+      'Email': student.email,
+      'Student Number': student.student_number || 'N/A',
+      'Year Level': student.year_level || 'N/A',
+      'Phone Number': student.phone_number || 'N/A',
+      'Status': student.is_active ? 'Active' : 'Inactive',
+      'Total Duties': student.schedule_students?.length || 0,
+      'Completed Duties': student.schedule_students?.filter(s => s.status === 'completed').length || 0,
+      'Created At': new Date(student.created_at).toLocaleDateString()
+    }));
+
+    if (format === 'json') {
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `students-export-${new Date().toISOString().split('T')[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } else if (format === 'csv') {
+      const headers = Object.keys(exportData[0] || {});
+      const csvContent = [
+        headers.join(','),
+        ...exportData.map(row => headers.map(header => {
+          const value = row[header]?.toString() || '';
+          return value.includes(',') ? `"${value}"` : value;
+        }).join(','))
+      ].join('\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `students-export-${new Date().toISOString().split('T')[0]}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } else if (format === 'excel') {
+      // Create HTML table for Excel
+      const headers = Object.keys(exportData[0] || {});
+      const tableHTML = `
+        <table>
+          <thead>
+            <tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
+          </thead>
+          <tbody>
+            ${exportData.map(row => `<tr>${headers.map(h => `<td>${row[h]}</td>`).join('')}</tr>`).join('')}
+          </tbody>
+        </table>
+      `;
+
+      const blob = new Blob([tableHTML], { type: 'application/vnd.ms-excel' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `students-export-${new Date().toISOString().split('T')[0]}.xls`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+  };
+
   const handleDeleteStudent = async (studentId) => {
     if (!window.confirm('Are you sure you want to delete this student account? This action cannot be undone and will remove all associated data.')) {
       return;
@@ -437,10 +499,32 @@ const StudentManagement = () => {
             <Upload className="w-4 h-4" />
             <span>Import</span>
           </button>
-          <button className="btn-secondary flex items-center space-x-2">
-            <Download className="w-4 h-4" />
-            <span>Export</span>
-          </button>
+          <div className="relative group">
+            <button className="btn-secondary flex items-center space-x-2">
+              <Download className="w-4 h-4" />
+              <span>Export</span>
+            </button>
+            <div className="hidden group-hover:block absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+              <button
+                onClick={() => exportStudents('csv')}
+                className="w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors first:rounded-t-lg"
+              >
+                Export as CSV
+              </button>
+              <button
+                onClick={() => exportStudents('excel')}
+                className="w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors"
+              >
+                Export as Excel
+              </button>
+              <button
+                onClick={() => exportStudents('json')}
+                className="w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors last:rounded-b-lg"
+              >
+                Export as JSON
+              </button>
+            </div>
+          </div>
           <button 
             onClick={() => setShowCoAdminModal(true)}
             className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg transition-colors flex items-center space-x-2"

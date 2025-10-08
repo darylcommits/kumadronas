@@ -111,6 +111,23 @@ const Dashboard = ({ user, session, onProfileUpdate }) => {
     };
   }, [user]);
 
+  // Prevent body scroll when mobile sidebar is open
+  useEffect(() => {
+    if (sidebarOpen && window.innerWidth < 1024) {
+      document.body.classList.add('sidebar-open');
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.classList.remove('sidebar-open');
+      document.body.style.overflow = '';
+    }
+
+    // Cleanup on unmount
+    return () => {
+      document.body.classList.remove('sidebar-open');
+      document.body.style.overflow = '';
+    };
+  }, [sidebarOpen]);
+
   const initializeDashboard = async () => {
     // Run all fetches in background, don't block UI
     Promise.all([
@@ -169,46 +186,38 @@ const Dashboard = ({ user, session, onProfileUpdate }) => {
 
   const fetchPendingBookings = async () => {
     try {
-      console.log('Fetching pending bookings...');
+      console.log('Fetching pending schedule approvals...');
       const { data, error } = await supabase
-        .from('schedule_students')
+        .from('schedules')
         .select(`
           *,
-          schedules (
+          schedule_students!inner (
             id,
-            date,
-            description,
-            location,
-            shift_start,
-            shift_end,
+            student_id,
+            booking_time,
             status,
-            max_students
-          ),
-          profiles:student_id (
-            id,
-            full_name,
-            email,
-            student_number,
-            year_level
+            profiles:student_id (
+              id,
+              full_name,
+              email,
+              student_number,
+              year_level
+            )
           )
         `)
-        .eq('status', 'booked')
-        .order('booking_time', { ascending: false });
+        .eq('status', 'pending')
+        .eq('schedule_students.status', 'booked')
+        .order('date', { ascending: true });
 
       if (error) {
-        console.error('Error fetching pending bookings:', error);
+        console.error('Error fetching pending schedules:', error);
         return;
       }
 
-      console.log('Raw pending bookings data:', data);
+      console.log('Pending schedules with bookings:', data);
       
-      // Filter for schedules that need admin approval (pending status)
-      const pendingApprovals = data?.filter(booking => 
-        booking.schedules?.status === 'pending'
-      ) || [];
-      
-      console.log('Filtered pending approvals:', pendingApprovals);
-      setPendingBookings(pendingApprovals);
+      // Group schedules that have bookings awaiting approval
+      setPendingBookings(data || []);
     } catch (error) {
       console.error('Error fetching pending bookings:', error);
     }
@@ -465,7 +474,35 @@ const Dashboard = ({ user, session, onProfileUpdate }) => {
   const handleApproveSchedule = async (scheduleId) => {
     try {
       console.log('Approving schedule:', scheduleId);
+      
+      // Get all students with active bookings for this schedule
+      const { data: bookings } = await supabase
+        .from('schedule_students')
+        .select('student_id, profiles:student_id(full_name)')
+        .eq('schedule_id', scheduleId)
+        .eq('status', 'booked');
+      
+      // Approve the schedule
       await dbHelpers.updateScheduleStatus(scheduleId, 'approved', user.id);
+      
+      // Send notifications to all students
+      if (bookings && bookings.length > 0) {
+        const notifications = bookings.map(booking => ({
+          user_id: booking.student_id,
+          title: 'Duty Schedule Approved ✓',
+          message: `Your duty booking has been approved! You can now complete your duty on the scheduled date.`,
+          type: 'success'
+        }));
+        
+        try {
+          const { error: notificationError } = await supabase.from('notifications').insert(notifications);
+          if (notificationError) {
+            console.warn('Failed to send notifications:', notificationError);
+          }
+        } catch (err) {
+          console.warn('Failed to send notifications:', err);
+        }
+      }
       
       // Refresh all related data
       await Promise.all([
@@ -474,7 +511,7 @@ const Dashboard = ({ user, session, onProfileUpdate }) => {
         fetchDashboardStats()
       ]);
       
-      alert('Schedule approved successfully!');
+      alert(`Schedule approved successfully! ${bookings?.length || 0} student(s) notified.`);
     } catch (error) {
       console.error('Error approving schedule:', error);
       alert('Error approving schedule: ' + error.message);
@@ -600,6 +637,72 @@ const Dashboard = ({ user, session, onProfileUpdate }) => {
     } catch (error) {
       console.error('Error completing duty:', error);
       alert('Error completing duty: ' + error.message);
+    }
+  };
+
+  const exportDuties = (format) => {
+    const exportData = studentDuties.map(duty => ({
+      'Date': new Date(duty.schedules.date).toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      }),
+      'Location': duty.schedules.location || 'N/A',
+      'Shift Start': duty.schedules.shift_start,
+      'Shift End': duty.schedules.shift_end,
+      'Description': duty.schedules.description || 'N/A',
+      'Schedule Status': duty.schedules.status,
+      'Booking Status': duty.status,
+      'Booked At': new Date(duty.booking_time).toLocaleString(),
+      'Completed At': duty.completed_at ? new Date(duty.completed_at).toLocaleString() : 'N/A'
+    }));
+
+    if (format === 'json') {
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `my-duties-${new Date().toISOString().split('T')[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } else if (format === 'csv') {
+      const headers = Object.keys(exportData[0] || {});
+      const csvContent = [
+        headers.join(','),
+        ...exportData.map(row => headers.map(header => {
+          const value = row[header]?.toString() || '';
+          return value.includes(',') ? `"${value}"` : value;
+        }).join(','))
+      ].join('\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `my-duties-${new Date().toISOString().split('T')[0]}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } else if (format === 'excel') {
+      const headers = Object.keys(exportData[0] || {});
+      const tableHTML = `
+        <table border="1">
+          <thead>
+            <tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
+          </thead>
+          <tbody>
+            ${exportData.map(row => `<tr>${headers.map(h => `<td>${row[h]}</td>`).join('')}</tr>`).join('')}
+          </tbody>
+        </table>
+      `;
+
+      const blob = new Blob([tableHTML], { type: 'application/vnd.ms-excel' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `my-duties-${new Date().toISOString().split('T')[0]}.xls`;
+      a.click();
+      URL.revokeObjectURL(url);
     }
   };
 
@@ -967,10 +1070,10 @@ const Dashboard = ({ user, session, onProfileUpdate }) => {
       <div className="flex justify-between items-center">
         <div>
           <h3 className="text-2xl font-bold text-gray-900">Pending Schedule Approvals</h3>
-          <p className="text-gray-600">Review and approve student duty bookings</p>
+          <p className="text-gray-600">Review and approve duty schedules with student bookings</p>
         </div>
         <div className="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm font-medium">
-          {pendingBookings.length} pending approvals
+          {pendingBookings.length} pending schedule{pendingBookings.length !== 1 ? 's' : ''}
         </div>
       </div>
 
@@ -982,78 +1085,90 @@ const Dashboard = ({ user, session, onProfileUpdate }) => {
         </div>
       ) : (
         <div className="space-y-4">
-          {pendingBookings.map((booking) => (
-            <div key={booking.id} className="card hover:shadow-lg transition-shadow border-l-4 border-l-yellow-400">
-              <div className="flex justify-between items-start">
-                <div className="flex-1">
-                  <div className="flex items-center space-x-3 mb-3">
-                    <Calendar className="w-5 h-5 text-emerald-600" />
-                    <div>
-                      <h4 className="font-semibold text-lg text-gray-900">
-                        {new Date(booking.schedules.date).toLocaleDateString('en-US', {
-                          weekday: 'long',
-                          year: 'numeric',
-                          month: 'long',
-                          day: 'numeric'
-                        })}
-                      </h4>
-                      <p className="text-sm text-gray-600">
-                        {booking.schedules.shift_start} - {booking.schedules.shift_end} • {booking.schedules.location}
+          {pendingBookings.map((schedule) => {
+            const students = schedule.schedule_students || [];
+            return (
+              <div key={schedule.id} className="card hover:shadow-lg transition-shadow border-l-4 border-l-yellow-400">
+                <div className="flex justify-between items-start">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-3 mb-3">
+                      <Calendar className="w-5 h-5 text-emerald-600" />
+                      <div>
+                        <h4 className="font-semibold text-lg text-gray-900">
+                          {new Date(schedule.date).toLocaleDateString('en-US', {
+                            weekday: 'long',
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric'
+                          })}
+                        </h4>
+                        <p className="text-sm text-gray-600">
+                          {schedule.shift_start} - {schedule.shift_end} • {schedule.location}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="bg-gray-50 p-3 rounded-lg mb-4">
+                      <p className="text-sm text-gray-600 mb-1">Schedule Details:</p>
+                      <p className="text-sm font-medium text-gray-900">{schedule.description}</p>
+                    </div>
+
+                    <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                      <div className="flex items-center space-x-2 mb-3">
+                        <Users className="w-4 h-4 text-blue-600" />
+                        <p className="font-medium text-blue-900">
+                          Students Assigned ({students.length}/{schedule.max_students || 2})
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        {students.map((student, idx) => (
+                          <div key={student.id} className="flex items-center justify-between bg-white p-2 rounded">
+                            <div className="flex items-center space-x-3">
+                              <div className="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center">
+                                <span className="text-emerald-700 text-xs font-medium">
+                                  {student.profiles?.full_name?.split(' ').map(n => n[0]).join('').substring(0, 2)}
+                                </span>
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium text-gray-900">{student.profiles?.full_name}</p>
+                                <p className="text-xs text-gray-600">{student.profiles?.student_number} • {student.profiles?.year_level}</p>
+                              </div>
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              Booked: {new Date(student.booking_time).toLocaleDateString()}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="mt-3 p-2 bg-yellow-50 rounded border border-yellow-200">
+                      <p className="text-xs text-yellow-800">
+                        ⚠️ Approving this schedule will approve it for ALL {students.length} student{students.length !== 1 ? 's' : ''} listed above.
                       </p>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                    <div className="flex items-center space-x-3">
-                      <User className="w-4 h-4 text-gray-500" />
-                      <div>
-                        <p className="font-medium text-gray-900">{booking.profiles.full_name}</p>
-                        <p className="text-sm text-gray-600">{booking.profiles.year_level}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-3">
-                      <Mail className="w-4 h-4 text-gray-500" />
-                      <div>
-                        <p className="text-sm text-gray-700">{booking.profiles.email}</p>
-                        <p className="text-sm text-gray-600">ID: {booking.profiles.student_number}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-3">
-                      <Clock className="w-4 h-4 text-gray-500" />
-                      <div>
-                        <p className="text-sm text-gray-700">Booked on</p>
-                        <p className="text-sm text-gray-600">
-                          {new Date(booking.booking_time).toLocaleDateString()}
-                        </p>
-                      </div>
-                    </div>
+                  <div className="flex flex-col space-y-2 ml-6">
+                    <button
+                      onClick={() => handleApproveSchedule(schedule.id)}
+                      className="flex items-center space-x-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors whitespace-nowrap"
+                    >
+                      <CheckCircle className="w-4 h-4" />
+                      <span>Approve All</span>
+                    </button>
+                    <button
+                      onClick={() => handleRejectSchedule(schedule.id)}
+                      className="flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors whitespace-nowrap"
+                    >
+                      <XCircle className="w-4 h-4" />
+                      <span>Reject All</span>
+                    </button>
                   </div>
-
-                  <div className="bg-gray-50 p-3 rounded-lg">
-                    <p className="text-sm text-gray-600 mb-1">Schedule Details:</p>
-                    <p className="text-sm font-medium text-gray-900">{booking.schedules.description}</p>
-                  </div>
-                </div>
-
-                <div className="flex flex-col space-y-2 ml-6">
-                  <button
-                    onClick={() => handleApproveSchedule(booking.schedules.id)}
-                    className="flex items-center space-x-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors"
-                  >
-                    <CheckCircle className="w-4 h-4" />
-                    <span>Approve</span>
-                  </button>
-                  <button
-                    onClick={() => handleRejectSchedule(booking.schedules.id)}
-                    className="flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors"
-                  >
-                    <XCircle className="w-4 h-4" />
-                    <span>Reject</span>
-                  </button>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -1117,7 +1232,9 @@ const Dashboard = ({ user, session, onProfileUpdate }) => {
                 const studentCount = activeStudents.length;
                 const maxStudents = day.schedule?.max_students || 2;
                 const isFull = studentCount >= maxStudents;
-                const isBooked = activeStudents.some(s => s.student_id === user.id);
+                const myBooking = activeStudents.find(s => s.student_id === user.id);
+                const isBooked = !!myBooking;
+                const isApproved = day.schedule?.status === 'approved';
                 const hasSameDayCancellation = user?.role === 'student' && checkSameDayCancellation(day.date.toISOString().split('T')[0]);
                 
                 // FIXED: Role-specific booking logic
@@ -1176,9 +1293,9 @@ const Dashboard = ({ user, session, onProfileUpdate }) => {
                               </span>
                               {isBooked && (
                                 <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                  day.schedule.status === 'approved' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                                  isApproved ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
                                 }`}>
-                                  {day.schedule.status === 'approved' ? 'CONFIRMED' : 'PENDING'}
+                                  {isApproved ? 'APPROVED' : 'PENDING'}
                                 </span>
                               )}
                             </>
@@ -1305,9 +1422,9 @@ const Dashboard = ({ user, session, onProfileUpdate }) => {
 
                     {isBooked && day.schedule && user?.role === 'student' && (
                       <div className={`mt-2 text-xs font-medium text-center ${
-                        day.schedule.status === 'approved' ? 'text-green-600' : 'text-yellow-600'
+                        isApproved ? 'text-green-600' : 'text-yellow-600'
                       }`}>
-                        {day.schedule.status === 'approved' ? 'Your Duty Confirmed' : 'Awaiting Confirmation'}
+                        {isApproved ? 'Your Duty Approved ✓' : 'Awaiting Admin Approval'}
                       </div>
                     )}
 
@@ -1404,10 +1521,32 @@ const Dashboard = ({ user, session, onProfileUpdate }) => {
             <Filter className="w-4 h-4" />
             <span>Filter</span>
           </button>
-          <button className="btn-secondary flex items-center space-x-2">
-            <Download className="w-4 h-4" />
-            <span>Export</span>
-          </button>
+          <div className="relative group">
+            <button className="btn-secondary flex items-center space-x-2">
+              <Download className="w-4 h-4" />
+              <span>Export</span>
+            </button>
+            <div className="hidden group-hover:block absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+              <button
+                onClick={() => exportDuties('csv')}
+                className="w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors first:rounded-t-lg"
+              >
+                Export as CSV
+              </button>
+              <button
+                onClick={() => exportDuties('excel')}
+                className="w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors"
+              >
+                Export as Excel
+              </button>
+              <button
+                onClick={() => exportDuties('json')}
+                className="w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors last:rounded-b-lg"
+              >
+                Export as JSON
+              </button>
+            </div>
+          </div>
         </div>
       </div>
       
@@ -1434,29 +1573,28 @@ const Dashboard = ({ user, session, onProfileUpdate }) => {
                     <p className="font-medium">{new Date(duty.booking_time).toLocaleString()}</p>
                   </div>
                   <div>
-                    <p className="text-gray-600">Schedule Status:</p>
-                    <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${
-                      duty.schedules.status === 'approved' 
-                        ? 'bg-green-100 text-green-800'
-                        : 'bg-yellow-100 text-yellow-800'
-                    }`}>
-                      {duty.schedules.status}
-                    </span>
+                    <p className="text-gray-600">Location:</p>
+                    <p className="font-medium">{duty.schedules.location || 'N/A'}</p>
                   </div>
                   <div>
-                    <p className="text-gray-600">Booking Status:</p>
+                    <p className="text-gray-600">Approval Status:</p>
                     <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${
-                      duty.status === 'booked' ? 'bg-blue-100 text-blue-800' :
-                      duty.status === 'completed' ? 'bg-green-100 text-green-800' :
-                      'bg-red-100 text-red-800'
+                      duty.status === 'completed' ? 'bg-blue-100 text-blue-800' :
+                      duty.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                      duty.schedules.status === 'approved' ? 'bg-green-100 text-green-800' :
+                      'bg-yellow-100 text-yellow-800'
                     }`}>
-                      {duty.status}
+                      {duty.status === 'completed' ? 'Completed' :
+                       duty.status === 'cancelled' ? 'Cancelled' :
+                       duty.schedules.status === 'approved' ? 'Approved' :
+                       'Pending Approval'}
                     </span>
                   </div>
                 </div>
               </div>
 
               <div className="flex flex-col items-end space-y-2 ml-4">
+                {/* Cancel button - only for active bookings before duty day */}
                 {duty.status === 'booked' && canCancelDuty(duty.schedules.date) && (
                   <button
                     onClick={() => handleCancelDuty(duty.id, duty.schedules.date)}
@@ -1473,8 +1611,15 @@ const Dashboard = ({ user, session, onProfileUpdate }) => {
                   </span>
                 )}
 
-                {/* Complete duty button */}
-                {duty.status === 'booked' && (
+                {/* Pending approval indicator */}
+                {duty.status === 'booked' && duty.schedules.status === 'pending' && (
+                  <span className="text-xs text-yellow-600 px-3 py-1 bg-yellow-50 rounded-lg border border-yellow-200">
+                    ⏳ Awaiting Admin Approval
+                  </span>
+                )}
+
+                {/* Complete duty button - only for approved bookings */}
+                {duty.status === 'booked' && duty.schedules.status === 'approved' && (
                   <button
                     onClick={() => handleCompleteDuty(duty.id)}
                     className="flex items-center space-x-1 text-emerald-600 hover:text-emerald-700 text-sm px-3 py-1 rounded-lg hover:bg-emerald-50 transition-colors"
@@ -1493,16 +1638,16 @@ const Dashboard = ({ user, session, onProfileUpdate }) => {
                     title="Print completion certificate"
                   >
                     <Printer className="w-4 h-4" />
-                    <span>Print</span>
+                    <span>Print Certificate</span>
                   </button>
                 )}
 
-                {/* Delete icon for latest duty */}
-                {duty.status === 'booked' && (
+                {/* Delete button - only for pending bookings (not yet approved) */}
+                {duty.status === 'booked' && duty.schedules.status === 'pending' && (
                   <button
                     onClick={() => handleDeleteDuty(duty.id)}
                     className="flex items-center space-x-1 text-gray-400 hover:text-red-600 text-sm px-2 py-1 rounded-lg hover:bg-red-50 transition-colors"
-                    title="Delete duty entry"
+                    title="Delete pending booking"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -1651,9 +1796,15 @@ const Dashboard = ({ user, session, onProfileUpdate }) => {
             <div className="flex items-center space-x-4">
               <button
                 onClick={() => setSidebarOpen(!sidebarOpen)}
-                className="lg:hidden p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                className="lg:hidden p-2 rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors"
+                aria-label={sidebarOpen ? "Close menu" : "Open menu"}
+                aria-expanded={sidebarOpen}
               >
-                {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+                {sidebarOpen ? (
+                  <X className="w-6 h-6 text-gray-700" />
+                ) : (
+                  <Menu className="w-6 h-6 text-gray-700" />
+                )}
               </button>
               
               <div className="flex items-center space-x-3">
@@ -1678,14 +1829,7 @@ const Dashboard = ({ user, session, onProfileUpdate }) => {
             {/* Right side - Notifications and User Menu */}
             <div className="flex items-center space-x-4">
               {/* Search */}
-              <div className="hidden md:block relative">
-                <Search className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search..."
-                  className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                />
-              </div>
+              
 
               {/* Notifications */}
               <div className="relative">
@@ -1812,60 +1956,116 @@ const Dashboard = ({ user, session, onProfileUpdate }) => {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex gap-8">
-          {/* Sidebar Navigation */}
-          <div className={`${
-            sidebarOpen ? 'block' : 'hidden'
-          } lg:block w-64 space-y-2 lg:sticky lg:top-24 lg:h-fit`}>
-            <nav className="space-y-1">
-              {menuItems.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => {
-                      setActiveTab(item.id);
-                      setSidebarOpen(false);
-                    }}
-                    className={`w-full flex items-center justify-between px-4 py-3 rounded-lg text-left transition-all duration-200 ${
-                      activeTab === item.id
-                        ? 'bg-gradient-to-r from-emerald-600 to-emerald-700 text-white shadow-lg transform scale-105'
-                        : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
-                    }`}
-                  >
-                    <div className="flex items-center space-x-3">
-                      <Icon className="w-5 h-5" />
-                      <span className="font-medium">{item.label}</span>
-                    </div>
-                    {item.badge > 0 && (
-                      <span className="bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                        {item.badge > 9 ? '9+' : item.badge}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </nav>
-
-            {/* User Info Card in Sidebar */}
-            <div className="mt-8 p-4 bg-gradient-to-r from-emerald-50 to-slate-50 rounded-lg border border-emerald-200">
-              <div className="flex items-center space-x-3">
-                <div className="w-12 h-12 rounded-full overflow-hidden flex items-center justify-center bg-white border-2 border-emerald-200">
-                  <img 
-                    src="/image0.png" 
-                    alt="Comadronas System Logo" 
-                    className="w-full h-full object-contain"
-                  />
+          {/* Sidebar Navigation - Mobile Drawer & Desktop Sticky */}
+          <aside className={`
+            fixed lg:sticky
+            top-0 lg:top-24
+            left-0 lg:left-auto
+            h-full lg:h-fit
+            w-64 sm:w-72 lg:w-64
+            bg-white lg:bg-transparent
+            shadow-2xl lg:shadow-none
+            z-40 lg:z-auto
+            transform transition-transform duration-300 ease-in-out
+            ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+            overflow-y-auto lg:overflow-visible
+            pb-20 lg:pb-0
+          `}>
+            <div className="p-4 lg:p-0 space-y-2">
+              {/* Mobile Header */}
+              <div className="flex lg:hidden items-center justify-between mb-6 pb-4 border-b border-gray-200">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 rounded-lg overflow-hidden flex items-center justify-center">
+                    <img 
+                      src="/image0.png" 
+                      alt="Comadronas System Logo" 
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                  <div>
+                    <h2 className="font-bold text-gray-900">Menu</h2>
+                    <p className="text-xs text-gray-600">Navigation</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="font-medium text-gray-900">{user?.full_name}</p>
-                  <p className="text-sm text-gray-600 capitalize">{user?.role}</p>
-                  {user?.email && (
-                    <p className="text-xs text-gray-500 truncate">{user.email}</p>
-                  )}
+                <button
+                  onClick={() => setSidebarOpen(false)}
+                  className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                  aria-label="Close menu"
+                >
+                  <X className="w-5 h-5 text-gray-600" />
+                </button>
+              </div>
+
+              {/* Navigation Menu */}
+              <nav className="space-y-1">
+                {menuItems.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        setActiveTab(item.id);
+                        setSidebarOpen(false);
+                      }}
+                      className={`w-full flex items-center justify-between px-4 py-3 rounded-lg text-left transition-all duration-200 ${
+                        activeTab === item.id
+                          ? 'bg-gradient-to-r from-emerald-600 to-emerald-700 text-white shadow-lg transform scale-105'
+                          : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                      }`}
+                    >
+                      <div className="flex items-center space-x-3">
+                        <Icon className="w-5 h-5 flex-shrink-0" />
+                        <span className="font-medium text-sm sm:text-base">{item.label}</span>
+                      </div>
+                      {item.badge > 0 && (
+                        <span className="bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center flex-shrink-0">
+                          {item.badge > 9 ? '9+' : item.badge}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </nav>
+
+              {/* User Info Card in Sidebar */}
+              <div className="mt-8 p-4 bg-gradient-to-r from-emerald-50 to-slate-50 rounded-lg border border-emerald-200">
+                <div className="flex items-center space-x-3">
+                  <div className="w-12 h-12 rounded-full overflow-hidden flex items-center justify-center bg-white border-2 border-emerald-200 flex-shrink-0">
+                    <img 
+                      src="/image0.png" 
+                      alt="Comadronas System Logo" 
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-gray-900 truncate">{user?.full_name}</p>
+                    <p className="text-sm text-gray-600 capitalize">{user?.role}</p>
+                    {user?.email && (
+                      <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                    )}
+                  </div>
                 </div>
               </div>
+
+              {/* Mobile Sign Out Button */}
+              <button
+                onClick={handleSignOut}
+                className="lg:hidden w-full flex items-center justify-center space-x-2 px-4 py-3 mt-4 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors duration-200"
+              >
+                <LogOut className="w-5 h-5" />
+                <span className="font-medium">Sign Out</span>
+              </button>
             </div>
-          </div>
+          </aside>
+
+          {/* Mobile Overlay */}
+          {sidebarOpen && (
+            <div
+              className="fixed inset-0 bg-black bg-opacity-50 z-30 lg:hidden transition-opacity duration-300"
+              onClick={() => setSidebarOpen(false)}
+              aria-hidden="true"
+            ></div>
+          )}
 
           {/* Main Content */}
           <div className="flex-1 min-w-0">
@@ -1873,14 +2073,6 @@ const Dashboard = ({ user, session, onProfileUpdate }) => {
           </div>
         </div>
       </div>
-
-      {/* Mobile overlay */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-30 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        ></div>
-      )}
 
       {/* Reject Schedule Confirmation Modal */}
       {showRejectConfirm && (

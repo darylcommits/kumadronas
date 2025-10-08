@@ -109,22 +109,83 @@ const ReportsAnalytics = () => {
   };
 
   const exportReport = (format) => {
-    // In a real app, this would generate and download the report
     const reportData = {
       period: `Last ${dateRange} days`,
       generated: new Date().toISOString(),
       data: analyticsData
     };
 
+    // Prepare flat data for CSV/Excel
+    const flatData = [
+      { 'Metric': 'Total Duties', 'Value': analyticsData.totalDuties || 0 },
+      { 'Metric': 'Completed Duties', 'Value': analyticsData.completedDuties || 0 },
+      { 'Metric': 'Cancelled Duties', 'Value': analyticsData.cancelledDuties || 0 },
+      { 'Metric': 'Pending Duties', 'Value': analyticsData.pendingDuties || 0 },
+      { 'Metric': 'Total Students', 'Value': analyticsData.totalStudents || 0 },
+      { 'Metric': 'Active Students', 'Value': analyticsData.activeStudents || 0 },
+      { 'Metric': 'Completion Rate', 'Value': `${analyticsData.completionRate || 0}%` },
+      { 'Metric': 'Cancellation Rate', 'Value': `${analyticsData.cancellationRate || 0}%` }
+    ];
+
     if (format === 'json') {
       const blob = new Blob([JSON.stringify(reportData, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `duty-report-${dateRange}days.json`;
+      a.download = `duty-report-${dateRange}days-${new Date().toISOString().split('T')[0]}.json`;
       a.click();
-    } else {
-      alert(`${format.toUpperCase()} export would be implemented here`);
+      URL.revokeObjectURL(url);
+    } else if (format === 'csv') {
+      const headers = ['Metric', 'Value'];
+      const csvContent = [
+        `Report Period: Last ${dateRange} days`,
+        `Generated: ${new Date().toLocaleString()}`,
+        '',
+        headers.join(','),
+        ...flatData.map(row => `"${row.Metric}","${row.Value}"`)
+      ].join('\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `duty-report-${dateRange}days-${new Date().toISOString().split('T')[0]}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } else if (format === 'excel' || format === 'pdf') {
+      // Create HTML table for Excel
+      const tableHTML = `
+        <html>
+          <head>
+            <meta charset="utf-8">
+            <title>Duty Report - Last ${dateRange} Days</title>
+          </head>
+          <body>
+            <h1>Duty Report - Last ${dateRange} Days</h1>
+            <p>Generated: ${new Date().toLocaleString()}</p>
+            <br>
+            <table border="1" cellpadding="5" cellspacing="0">
+              <thead>
+                <tr>
+                  <th>Metric</th>
+                  <th>Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${flatData.map(row => `<tr><td>${row.Metric}</td><td>${row.Value}</td></tr>`).join('')}
+              </tbody>
+            </table>
+          </body>
+        </html>
+      `;
+
+      const blob = new Blob([tableHTML], { type: 'application/vnd.ms-excel' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `duty-report-${dateRange}days-${new Date().toISOString().split('T')[0]}.xls`;
+      a.click();
+      URL.revokeObjectURL(url);
     }
   };
 
