@@ -1651,9 +1651,15 @@ const Dashboard = ({ user, session, onProfileUpdate }) => {
             <div className="flex items-center space-x-4">
               <button
                 onClick={() => setSidebarOpen(!sidebarOpen)}
-                className="lg:hidden p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                className="lg:hidden p-2 rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors"
+                aria-label={sidebarOpen ? "Close menu" : "Open menu"}
+                aria-expanded={sidebarOpen}
               >
-                {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+                {sidebarOpen ? (
+                  <X className="w-6 h-6 text-gray-700" />
+                ) : (
+                  <Menu className="w-6 h-6 text-gray-700" />
+                )}
               </button>
               
               <div className="flex items-center space-x-3">
@@ -1812,60 +1818,116 @@ const Dashboard = ({ user, session, onProfileUpdate }) => {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex gap-8">
-          {/* Sidebar Navigation */}
-          <div className={`${
-            sidebarOpen ? 'block' : 'hidden'
-          } lg:block w-64 space-y-2 lg:sticky lg:top-24 lg:h-fit`}>
-            <nav className="space-y-1">
-              {menuItems.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => {
-                      setActiveTab(item.id);
-                      setSidebarOpen(false);
-                    }}
-                    className={`w-full flex items-center justify-between px-4 py-3 rounded-lg text-left transition-all duration-200 ${
-                      activeTab === item.id
-                        ? 'bg-gradient-to-r from-emerald-600 to-emerald-700 text-white shadow-lg transform scale-105'
-                        : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
-                    }`}
-                  >
-                    <div className="flex items-center space-x-3">
-                      <Icon className="w-5 h-5" />
-                      <span className="font-medium">{item.label}</span>
-                    </div>
-                    {item.badge > 0 && (
-                      <span className="bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                        {item.badge > 9 ? '9+' : item.badge}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </nav>
-
-            {/* User Info Card in Sidebar */}
-            <div className="mt-8 p-4 bg-gradient-to-r from-emerald-50 to-slate-50 rounded-lg border border-emerald-200">
-              <div className="flex items-center space-x-3">
-                <div className="w-12 h-12 rounded-full overflow-hidden flex items-center justify-center bg-white border-2 border-emerald-200">
-                  <img 
-                    src="/image0.png" 
-                    alt="Comadronas System Logo" 
-                    className="w-full h-full object-contain"
-                  />
+          {/* Sidebar Navigation - Mobile Drawer & Desktop Sticky */}
+          <aside className={`
+            fixed lg:sticky
+            top-0 lg:top-24
+            left-0 lg:left-auto
+            h-full lg:h-fit
+            w-64 sm:w-72 lg:w-64
+            bg-white lg:bg-transparent
+            shadow-2xl lg:shadow-none
+            z-40 lg:z-auto
+            transform transition-transform duration-300 ease-in-out
+            ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+            overflow-y-auto lg:overflow-visible
+            pb-20 lg:pb-0
+          `}>
+            <div className="p-4 lg:p-0 space-y-2">
+              {/* Mobile Header */}
+              <div className="flex lg:hidden items-center justify-between mb-6 pb-4 border-b border-gray-200">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 rounded-lg overflow-hidden flex items-center justify-center">
+                    <img 
+                      src="/image0.png" 
+                      alt="Comadronas System Logo" 
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                  <div>
+                    <h2 className="font-bold text-gray-900">Menu</h2>
+                    <p className="text-xs text-gray-600">Navigation</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="font-medium text-gray-900">{user?.full_name}</p>
-                  <p className="text-sm text-gray-600 capitalize">{user?.role}</p>
-                  {user?.email && (
-                    <p className="text-xs text-gray-500 truncate">{user.email}</p>
-                  )}
+                <button
+                  onClick={() => setSidebarOpen(false)}
+                  className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                  aria-label="Close menu"
+                >
+                  <X className="w-5 h-5 text-gray-600" />
+                </button>
+              </div>
+
+              {/* Navigation Menu */}
+              <nav className="space-y-1">
+                {menuItems.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        setActiveTab(item.id);
+                        setSidebarOpen(false);
+                      }}
+                      className={`w-full flex items-center justify-between px-4 py-3 rounded-lg text-left transition-all duration-200 ${
+                        activeTab === item.id
+                          ? 'bg-gradient-to-r from-emerald-600 to-emerald-700 text-white shadow-lg transform scale-105'
+                          : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                      }`}
+                    >
+                      <div className="flex items-center space-x-3">
+                        <Icon className="w-5 h-5 flex-shrink-0" />
+                        <span className="font-medium text-sm sm:text-base">{item.label}</span>
+                      </div>
+                      {item.badge > 0 && (
+                        <span className="bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center flex-shrink-0">
+                          {item.badge > 9 ? '9+' : item.badge}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </nav>
+
+              {/* User Info Card in Sidebar */}
+              <div className="mt-8 p-4 bg-gradient-to-r from-emerald-50 to-slate-50 rounded-lg border border-emerald-200">
+                <div className="flex items-center space-x-3">
+                  <div className="w-12 h-12 rounded-full overflow-hidden flex items-center justify-center bg-white border-2 border-emerald-200 flex-shrink-0">
+                    <img 
+                      src="/image0.png" 
+                      alt="Comadronas System Logo" 
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-gray-900 truncate">{user?.full_name}</p>
+                    <p className="text-sm text-gray-600 capitalize">{user?.role}</p>
+                    {user?.email && (
+                      <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                    )}
+                  </div>
                 </div>
               </div>
+
+              {/* Mobile Sign Out Button */}
+              <button
+                onClick={handleSignOut}
+                className="lg:hidden w-full flex items-center justify-center space-x-2 px-4 py-3 mt-4 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors duration-200"
+              >
+                <LogOut className="w-5 h-5" />
+                <span className="font-medium">Sign Out</span>
+              </button>
             </div>
-          </div>
+          </aside>
+
+          {/* Mobile Overlay */}
+          {sidebarOpen && (
+            <div
+              className="fixed inset-0 bg-black bg-opacity-50 z-30 lg:hidden transition-opacity duration-300"
+              onClick={() => setSidebarOpen(false)}
+              aria-hidden="true"
+            ></div>
+          )}
 
           {/* Main Content */}
           <div className="flex-1 min-w-0">
@@ -1873,14 +1935,6 @@ const Dashboard = ({ user, session, onProfileUpdate }) => {
           </div>
         </div>
       </div>
-
-      {/* Mobile overlay */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-30 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        ></div>
-      )}
 
       {/* Reject Schedule Confirmation Modal */}
       {showRejectConfirm && (
