@@ -1850,8 +1850,8 @@ const Dashboard = ({ user, session, onProfileUpdate }) => {
 
                 {/* Notifications Dropdown */}
                 {showNotifications && (
-                  <div className="absolute right-0 mt-2 w-[90vw] max-w-sm sm:w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50 sm:right-0 left-1/2 -translate-x-1/2 sm:left-auto sm:translate-x-0">
-                    <div className="p-4 border-b border-gray-200 sticky top-0 bg-white z-10">
+                  <div className="fixed sm:absolute top-16 sm:top-auto right-0 sm:right-0 left-1/2 sm:left-auto -translate-x-1/2 sm:translate-x-0 mt-0 sm:mt-2 w-[92vw] max-w-md sm:w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                    <div className="p-4 border-b border-gray-200 sticky top-0 bg-white z-10 rounded-t-lg">
                       <div className="flex items-center justify-between">
                         <h3 className="font-medium text-gray-900">Notifications</h3>
                         <button
@@ -1862,7 +1862,7 @@ const Dashboard = ({ user, session, onProfileUpdate }) => {
                         </button>
                       </div>
                     </div>
-                    <div className="max-h-[70vh] sm:max-h-96 overflow-y-auto">
+                    <div className="max-h-[75vh] sm:max-h-96 overflow-y-auto">
                       {notifications.slice(0, 5).map((notification) => (
                         <div
                           key={notification.id}
