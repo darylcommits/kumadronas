@@ -841,19 +841,21 @@ const ScheduleManagement = () => {
           </div>
 
           {/* Calendar Grid */}
-          <div className="overflow-hidden rounded-lg border border-gray-200">
-            {/* Day headers */}
-            <div className="grid grid-cols-7 bg-gray-50">
-              {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(day => (
-                <div key={day} className="p-4 text-center font-medium text-gray-700 border-r border-gray-200 last:border-r-0">
-                  {day}
-                </div>
-              ))}
-            </div>
+          <div className="overflow-x-auto sm:overflow-hidden rounded-lg border border-gray-200">
+            <div className="min-w-[720px] sm:min-w-0">
+              {/* Day headers */}
+              <div className="grid grid-cols-7 bg-gray-50">
+                {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(day => (
+                  <div key={day} className="p-2 sm:p-4 text-center font-medium text-gray-700 text-xs sm:text-sm border-r border-gray-200 last:border-r-0">
+                    <span className="hidden sm:inline">{day}</span>
+                    <span className="sm:hidden">{day.slice(0,3)}</span>
+                  </div>
+                ))}
+              </div>
 
-            {/* Calendar body */}
-            {generateCalendar().map((week, weekIndex) => (
-              <div key={weekIndex} className="grid grid-cols-7 border-t border-gray-200">
+              {/* Calendar body */}
+              {generateCalendar().map((week, weekIndex) => (
+                <div key={weekIndex} className="grid grid-cols-7 border-t border-gray-200">
                 {week.map((day, dayIndex) => {
                   const studentCount = day.schedule?.schedule_students?.length || 0;
                   const maxStudents = day.schedule?.max_students || 2;
@@ -861,12 +863,12 @@ const ScheduleManagement = () => {
                   return (
                     <div
                       key={dayIndex}
-                      className={`min-h-[120px] p-3 border-r border-gray-200 last:border-r-0 ${
+                      className={`min-h-[84px] sm:min-h-[120px] p-2 sm:p-3 border-r border-gray-200 last:border-r-0 ${
                         !day.isCurrentMonth ? 'bg-gray-50 text-gray-400' : 'bg-white'
                       } ${day.isToday ? 'bg-blue-50 border-2 border-blue-200' : ''}`}
                     >
                       <div className="flex justify-between items-start mb-2">
-                        <span className={`text-sm font-medium ${
+                        <span className={`text-xs sm:text-sm font-medium ${
                           day.isToday ? 'text-blue-600' : day.isCurrentMonth ? 'text-gray-900' : 'text-gray-400'
                         }`}>
                           {day.date.getDate()}
@@ -903,10 +905,10 @@ const ScheduleManagement = () => {
                           }`}>
                             {day.schedule.status}
                           </div>
-                          <div className="text-xs text-gray-600">
+                          <div className="text-[10px] sm:text-xs text-gray-600">
                             {studentCount}/{maxStudents} students
                           </div>
-                          <div className="text-xs text-gray-500">
+                          <div className="text-[10px] sm:text-xs text-gray-500">
                             {day.schedule.shift_start} - {day.schedule.shift_end}
                           </div>
                         </div>
@@ -919,7 +921,7 @@ const ScheduleManagement = () => {
                             });
                             setShowAddModal(true);
                           }}
-                          className="w-full text-left text-xs text-gray-400 hover:text-gray-600 py-1"
+                          className="w-full text-left text-[10px] sm:text-xs text-gray-400 hover:text-gray-600 py-1"
                         >
                           + Add schedule
                         </button>
@@ -929,6 +931,7 @@ const ScheduleManagement = () => {
                 })}
               </div>
             ))}
+            </div>
           </div>
         </div>
       )}
