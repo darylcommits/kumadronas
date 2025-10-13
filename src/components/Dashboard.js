@@ -63,6 +63,7 @@ const Dashboard = ({ user, session, onProfileUpdate }) => {
   const [showRejectConfirm, setShowRejectConfirm] = useState(false);
   const [scheduleToReject, setScheduleToReject] = useState(null);
   const [dailyCancellations, setDailyCancellations] = useState(new Set());
+  const [showUserMenu, setShowUserMenu] = useState(false);
 
   useEffect(() => {
     initializeDashboard();
@@ -1923,34 +1924,66 @@ const Dashboard = ({ user, session, onProfileUpdate }) => {
               </div>
 
               {/* User Profile */}
-              <div className="flex items-center space-x-3">
+              <div className="relative flex items-center space-x-3">
                 <div className="hidden sm:block text-right">
                   <p className="text-sm font-medium text-gray-900">{user?.full_name}</p>
                   <p className="text-xs text-gray-500 capitalize">{user?.role}</p>
                 </div>
-                {user?.avatar_url ? (
-                  <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-white shadow-lg">
+                <button
+                  onClick={() => setShowUserMenu(!showUserMenu)}
+                  className="w-10 h-10 rounded-full overflow-hidden border-2 border-white shadow-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  aria-haspopup="menu"
+                  aria-expanded={showUserMenu}
+                >
+                  {user?.avatar_url ? (
                     <img
                       src={user.avatar_url}
                       alt="Profile"
                       className="w-full h-full object-cover"
                     />
-                  </div>
-                ) : (
-                  <div className="w-10 h-10 bg-gradient-to-r from-emerald-600 to-slate-600 rounded-full flex items-center justify-center">
-                    {user?.role === 'admin' ? 
-                      <Shield className="w-5 h-5 text-white" /> : 
-                      <User className="w-5 h-5 text-white" />
-                    }
-                  </div>
-                )}
+                  ) : (
+                    <div className="w-full h-full bg-gradient-to-r from-emerald-600 to-slate-600 flex items-center justify-center">
+                      {user?.role === 'admin' ? 
+                        <Shield className="w-5 h-5 text-white" /> : 
+                        <User className="w-5 h-5 text-white" />
+                      }
+                    </div>
+                  )}
+                </button>
                 <button
                   onClick={handleSignOut}
-                  className="p-2 text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
+                  className="hidden sm:inline-flex p-2 text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
                   title="Sign Out"
                 >
                   <LogOut className="w-5 h-5" />
                 </button>
+
+                {showUserMenu && (
+                  <div className="fixed sm:absolute top-16 sm:top-auto right-4 sm:right-0 left-4 sm:left-auto mt-2 sm:mt-2 bg-white w-auto sm:w-48 max-w-md rounded-lg shadow-lg border border-gray-200 z-50">
+                    <div className="py-2">
+                      <button
+                        onClick={() => {
+                          setActiveTab('profile');
+                          setShowUserMenu(false);
+                        }}
+                        className="w-full flex items-center space-x-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                      >
+                        <User className="w-4 h-4" />
+                        <span>Profile</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowUserMenu(false);
+                          handleSignOut();
+                        }}
+                        className="w-full flex items-center space-x-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        <span>Sign Out</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
