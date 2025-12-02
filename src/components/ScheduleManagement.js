@@ -516,9 +516,7 @@ const ScheduleManagement = () => {
                 {hospitalLocations.find(loc => loc.name === newSchedule.location)?.description}
               </p>
             )}
-            <p className="text-xs text-amber-600 mt-1">
-              Each month is assigned to one hospital. The hospital is automatically selected based on the chosen date.
-            </p>
+          
           </div>
 
           <div>
