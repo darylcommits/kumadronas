@@ -28,6 +28,7 @@ const ScheduleManagement = () => {
   const [schedules, setSchedules] = useState([]);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState('calendar'); // calendar, pending, list
+  const [selectedHospital, setSelectedHospital] = useState('ISDH - Magsingal'); // Selected hospital for calendar view
   const [showAddModal, setShowAddModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [scheduleToDelete, setScheduleToDelete] = useState(null);
@@ -321,10 +322,11 @@ const ScheduleManagement = () => {
     for (let week = 0; week < 6; week++) {
       const weekDays = [];
       for (let day = 0; day < 7; day++) {
-        const daySchedule = schedules.find(s => 
-          new Date(s.date).toDateString() === currentDateLoop.toDateString()
+        const daySchedule = schedules.find(s =>
+          new Date(s.date).toDateString() === currentDateLoop.toDateString() &&
+          s.location === selectedHospital
         );
-        
+
         weekDays.push({
           date: new Date(currentDateLoop),
           schedule: daySchedule,
@@ -332,7 +334,7 @@ const ScheduleManagement = () => {
           isToday: currentDateLoop.toDateString() === new Date().toDateString(),
           isPast: currentDateLoop < new Date().setHours(0,0,0,0)
         });
-        
+
         currentDateLoop.setDate(currentDateLoop.getDate() + 1);
       }
       calendar.push(weekDays);
@@ -858,6 +860,27 @@ const ScheduleManagement = () => {
       {viewMode === 'pending' ? renderPendingApprovalsView() : (
         /* Calendar View */
         <div className="card">
+          {/* Hospital Selection Filter */}
+          <div className="flex items-center justify-between mb-4 p-4 bg-gray-50 rounded-lg">
+            <div className="flex items-center space-x-4">
+              <label className="text-sm font-medium text-gray-700">View Hospital Calendar:</label>
+              <select
+                value={selectedHospital}
+                onChange={(e) => setSelectedHospital(e.target.value)}
+                className="input-field max-w-xs"
+              >
+                {hospitalLocations.map((hospital) => (
+                  <option key={hospital.name} value={hospital.name}>
+                    {hospital.name} ({hospital.capacity} slots)
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="text-xs text-gray-600">
+              All hospitals are available in all months
+            </div>
+          </div>
+
           <div className="flex justify-between items-center mb-6">
             <button
               onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1))}
@@ -868,13 +891,16 @@ const ScheduleManagement = () => {
             
             <div className="text-center">
               <h3 className="text-xl font-semibold">
-                {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                {selectedHospital} - {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
               </h3>
               <p className="text-sm text-emerald-600 font-medium mt-1">
-                Assigned Hospital: {currentMonthHospital.name}
+                {getHospitalForMonth(currentDate).name === selectedHospital
+                  ? '✓ Assigned Hospital for this month'
+                  : `Assigned Hospital: ${getHospitalForMonth(currentDate).name}`
+                }
               </p>
               <p className="text-xs text-gray-500">
-                Capacity: {currentMonthHospital.capacity} students
+                Capacity: {hospitalLocations.find(h => h.name === selectedHospital)?.capacity || 4} students
               </p>
             </div>
             
