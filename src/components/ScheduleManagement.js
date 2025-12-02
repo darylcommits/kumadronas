@@ -48,7 +48,7 @@ const ScheduleManagement = () => {
     max_students: 4
   });
 
-  // Hospital locations with capacity limits
+  // Hospital locations with capacity limits and monthly rotation
   const hospitalLocations = [
     { name: 'ISDH - Magsingal', capacity: 4, description: 'Ilocos Sur District Hospital - Magsingal' },
     { name: 'ISDH - Sinait', capacity: 4, description: 'Ilocos Sur District Hospital - Sinait' },
@@ -59,6 +59,18 @@ const ScheduleManagement = () => {
     { name: 'RHU - San Ildefonso', capacity: 4, description: 'Rural Health Unit - San Ildefonso' },
     { name: 'RHU - Bantay', capacity: 4, description: 'Rural Health Unit - Bantay' }
   ];
+
+  // Monthly hospital rotation - each month assigned to one hospital
+  const getHospitalForMonth = (date) => {
+    const month = date.getMonth(); // 0-11
+    const year = date.getFullYear();
+    // Rotate through hospitals based on month index
+    const hospitalIndex = month % hospitalLocations.length;
+    return hospitalLocations[hospitalIndex];
+  };
+
+  // Get current month's assigned hospital
+  const currentMonthHospital = getHospitalForMonth(currentDate);
 
   useEffect(() => {
     // Initialize without blocking UI
@@ -189,8 +201,17 @@ const ScheduleManagement = () => {
 
   const handleCreateSchedule = async (e) => {
     e.preventDefault();
-    
+
     try {
+      // Check if the selected location is the assigned hospital for this month
+      const selectedDate = new Date(newSchedule.date);
+      const assignedHospital = getHospitalForMonth(selectedDate);
+
+      if (newSchedule.location !== assignedHospital.name) {
+        alert(`Cannot create schedule for ${newSchedule.location}. ${assignedHospital.name} is assigned to ${selectedDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}.`);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('schedules')
         .insert([{
@@ -207,10 +228,10 @@ const ScheduleManagement = () => {
       setNewSchedule({
         date: '',
         description: 'Community Health Center Duty',
-        location: 'Community Health Center',
+        location: currentMonthHospital.name,
         shift_start: '08:00',
-        shift_end: '17:00',
-        max_students: 2
+        shift_end: '20:00',
+        max_students: currentMonthHospital.capacity
       });
       alert('Schedule created successfully!');
     } catch (error) {
@@ -249,22 +270,24 @@ const ScheduleManagement = () => {
     }
   };
 
-  const generateBulkSchedules = async (startDate, endDate, daysOfWeek = [1, 2, 3, 4, 5], selectedLocation = 'ISDH - Magsingal') => {
+  const generateBulkSchedules = async (startDate, endDate, daysOfWeek = [1, 2, 3, 4, 5]) => {
     try {
       const schedules = [];
       const current = new Date(startDate);
       const end = new Date(endDate);
-      const location = hospitalLocations.find(loc => loc.name === selectedLocation);
 
       while (current <= end) {
         if (daysOfWeek.includes(current.getDay())) {
+          // Get the assigned hospital for this date's month
+          const assignedHospital = getHospitalForMonth(current);
+
           schedules.push({
             date: current.toISOString().split('T')[0],
             description: 'Community Health Center Duty',
-            location: selectedLocation,
+            location: assignedHospital.name,
             shift_start: '08:00',
             shift_end: '20:00',
-            max_students: location ? location.capacity : 2,
+            max_students: assignedHospital.capacity,
             created_by: (await supabase.auth.getUser()).data.user?.id
           });
         }
@@ -435,7 +458,16 @@ const ScheduleManagement = () => {
             <input
               type="date"
               value={newSchedule.date}
-              onChange={(e) => setNewSchedule({...newSchedule, date: e.target.value})}
+              onChange={(e) => {
+                const selectedDate = e.target.value;
+                const assignedHospital = selectedDate ? getHospitalForMonth(new Date(selectedDate)) : null;
+                setNewSchedule({
+                  ...newSchedule,
+                  date: selectedDate,
+                  location: assignedHospital ? assignedHospital.name : '',
+                  max_students: assignedHospital ? assignedHospital.capacity : 4
+                });
+              }}
               className="input-field"
               required
               min={new Date().toISOString().split('T')[0]}
@@ -461,26 +493,30 @@ const ScheduleManagement = () => {
               onChange={(e) => {
                 const selectedLocation = hospitalLocations.find(loc => loc.name === e.target.value);
                 setNewSchedule({
-                  ...newSchedule, 
+                  ...newSchedule,
                   location: e.target.value,
                   max_students: selectedLocation ? selectedLocation.capacity : 2
                 });
               }}
               className="input-field"
               required
+              disabled={!newSchedule.date}
             >
-              <option value="">Select Hospital Location</option>
-              {hospitalLocations.map((location, index) => (
-                <option key={index} value={location.name}>
-                  {location.name} (Max: {location.capacity} students)
+              <option value="">Select a date first</option>
+              {newSchedule.date && (
+                <option value={getHospitalForMonth(new Date(newSchedule.date)).name}>
+                  {getHospitalForMonth(new Date(newSchedule.date)).name} (Assigned to {new Date(newSchedule.date).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })})
                 </option>
-              ))}
+              )}
             </select>
             {newSchedule.location && (
               <p className="text-xs text-gray-500 mt-1">
                 {hospitalLocations.find(loc => loc.name === newSchedule.location)?.description}
               </p>
             )}
+            <p className="text-xs text-amber-600 mt-1">
+              Each month is assigned to one hospital. The hospital is automatically selected based on the chosen date.
+            </p>
           </div>
 
           <div>
@@ -572,20 +608,22 @@ const ScheduleManagement = () => {
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Hospital Location</label>
-              <select
-                value={bulkData.location}
-                onChange={(e) => setBulkData({...bulkData, location: e.target.value})}
-                className="input-field"
-                required
-              >
-                {hospitalLocations.map((location, index) => (
-                  <option key={index} value={location.name}>
-                    {location.name} (Max: {location.capacity} students)
-                  </option>
-                ))}
-              </select>
+            <div className="bg-blue-50 p-3 rounded-lg">
+              <p className="text-sm text-blue-800">
+                <strong>Note:</strong> Hospitals will be automatically assigned based on monthly rotation:
+              </p>
+              <ul className="text-xs text-blue-700 mt-2 space-y-1">
+                {Array.from({ length: 12 }, (_, i) => {
+                  const date = new Date();
+                  date.setMonth(i);
+                  const hospital = getHospitalForMonth(date);
+                  return (
+                    <li key={i}>
+                      {date.toLocaleDateString('en-US', { month: 'long' })}: {hospital.name}
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
 
             <div>
@@ -614,9 +652,9 @@ const ScheduleManagement = () => {
             </div>
 
             <div className="flex space-x-3 pt-4">
-              <button 
+              <button
                 onClick={() => {
-                  generateBulkSchedules(bulkData.startDate, bulkData.endDate, bulkData.daysOfWeek, bulkData.location);
+                  generateBulkSchedules(bulkData.startDate, bulkData.endDate, bulkData.daysOfWeek);
                   setShowBulkModal(false);
                 }}
                 className="btn-primary flex-1"
@@ -828,9 +866,17 @@ const ScheduleManagement = () => {
               <ChevronLeft className="w-5 h-5" />
             </button>
             
-            <h3 className="text-xl font-semibold">
-              {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-            </h3>
+            <div className="text-center">
+              <h3 className="text-xl font-semibold">
+                {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+              </h3>
+              <p className="text-sm text-emerald-600 font-medium mt-1">
+                Assigned Hospital: {currentMonthHospital.name}
+              </p>
+              <p className="text-xs text-gray-500">
+                Capacity: {currentMonthHospital.capacity} students
+              </p>
+            </div>
             
             <button
               onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1))}
@@ -915,9 +961,14 @@ const ScheduleManagement = () => {
                       ) : day.isCurrentMonth && !day.isPast && (
                         <button
                           onClick={() => {
+                            const assignedHospital = getHospitalForMonth(day.date);
                             setNewSchedule({
-                              ...newSchedule,
-                              date: day.date.toISOString().split('T')[0]
+                              date: day.date.toISOString().split('T')[0],
+                              description: 'Community Health Center Duty',
+                              location: assignedHospital.name,
+                              shift_start: '08:00',
+                              shift_end: '20:00',
+                              max_students: assignedHospital.capacity
                             });
                             setShowAddModal(true);
                           }}
